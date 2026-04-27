@@ -1,5 +1,5 @@
 from sklearn.metrics import accuracy_score
-from src.eval import evaluate
+from .eval import evaluate
 
 
 def train_epoch(model, dataloader, optimizer, criterion, device):

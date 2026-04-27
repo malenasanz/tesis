@@ -1,73 +1,68 @@
-from src.dataloader import get_dataloaders
 import torch
 import torch.nn as nn
-from src.model import SimpleCNN
+import numpy as np
+import pickle
+import os
+from src.dataloader import get_dataloaders
 from src.train import train
-from src.eval import evaluate, evaluate_subgroups
+from src.eval import evaluate_subgroups
+from src.model import SimpleCNN
 
-config_balanceado = {
+BASE_CONFIG = {
     "img_dir": "data/raw/celeba/img_align_celeba",
     "attr_path": "data/raw/celeba/list_attr_celeba.txt",
     "target_attr": "Blond_Hair",
-    "bias_attr": "Male",
-    "balanced": True,
+    "bias_attr": "Young",
     "batch_size": 64,
-    "num_epochs": 5,
+    "num_epochs": 10,
     "learning_rate": 0.001,
-    "model_save_path": "models/menos_mujeres_rubias.pth",
+    "model_class": SimpleCNN,
+    "optimizer_class": torch.optim.Adam,
+    "criterion": nn.BCELoss(),
 }
 
-config = {
-    "img_dir": "data/raw/celeba/img_align_celeba",
-    "attr_path": "data/raw/celeba/list_attr_celeba.txt",
-    "target_attr": "Blond_Hair",
-    "bias_attr": "Male",
-    "proportions": {
-    (0, 0): 0.20,  # mujer no rubia  (más)
-    (0, 1): 0.20,  # mujer rubia     (menos)
-    (1, 0): 0.20,  # hombre no rubio
-    (1, 1): 0.40  # hombre rubio
-    },
-"n_total": 4300,
-    "batch_size": 64,
-    "num_epochs": 5,
-    "learning_rate": 0.001,
-    "model_save_path": "models/mas_hombres_rubios.pth",
+SUBGROUP_LABELS = {
+    (0, 0): "No joven no rubio",
+    (0, 1): "No joven rubio",
+    (1, 0): "Joven no rubio",
+    (1, 1): "Joven rubio",
 }
 
+P1_VALUES = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+N_CORRIDAS = 10
 
-
-# Get dataloaders
-train_loader, val_loader, test_loader, dataset, test_df = get_dataloaders(config)
-print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}, Test batches: {len(test_loader)}")
-
-# Setup device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-# Initialize model, optimizer, criterion
-model = SimpleCNN().to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=config["learning_rate"])
-criterion = nn.BCELoss()
+# results[p1][subgroup_key] = [acc_corrida1, acc_corrida2, ...]
+results = {p1: {key: [] for key in SUBGROUP_LABELS} for p1 in P1_VALUES}
+seeds_usadas = {p1: [] for p1 in P1_VALUES}
 
-# Training loop
-for epoch in range(config["num_epochs"]):
-    train_loss, train_acc = train(model, train_loader, optimizer, criterion, device)
-    val_loss, val_acc = evaluate(model, val_loader, criterion, device)
+for p1 in P1_VALUES:
+    p2 = round(1 - p1, 1)
+    print(f"\n{'='*50}")
+    print(f"p1={p1} (hombres no rubios) | p2={p2} (hombres rubios)")
+    print(f"{'='*50}")
 
-    print(f"Epoch {epoch+1}/{config['num_epochs']} | Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} | Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
+    for i in range(N_CORRIDAS):
+        seed = np.random.randint(0, 10000)
+        seeds_usadas[p1].append(seed)
+        config = {**BASE_CONFIG, "p1": p1, "p2": p2, "seed": seed}
+        print(f"\n  Corrida {i+1}/{N_CORRIDAS} | seed={seed}")
 
-# Evaluate on test set by subgroup
-print("\nTest evaluation by subgroup:")
-subgroup_results = evaluate_subgroups(model, dataset, test_df, config["bias_attr"], config["target_attr"], device)
-for (v1, v2), metrics in subgroup_results.items():
-    print(f"  {config['bias_attr']}={v1}, {config['target_attr']}={v2} | Acc: {metrics['acc']:.4f}, n={metrics['n']}")
+        train_loader, val_loader, test_loader, dataset, test_df = get_dataloaders(config)
+        model = train(config, train_loader, val_loader, device)
+        subgroup_results = evaluate_subgroups(model, dataset, test_df, config["bias_attr"], config["target_attr"], device)
 
-# Save the model and subgroup accuracies
-torch.save({
-    "model_state_dict": model.state_dict(),
-    "config": config,
-    "subgroup_accuracies": {str(k): v["acc"] for k, v in subgroup_results.items()},
-}, config["model_save_path"])
-print(f"Model saved to {config['model_save_path']}")
+        for key in SUBGROUP_LABELS:
+            results[p1][key].append(subgroup_results[key]["acc"])
 
+    print(f"\n  Resumen p1={p1}:")
+    for key, label in SUBGROUP_LABELS.items():
+        accs = results[p1][key]
+        print(f"    {label}: mean={np.mean(accs):.4f} | std={np.std(accs):.4f}")
+
+os.makedirs("results", exist_ok=True)
+with open("results/results_young_cruzado.pkl", "wb") as f:
+    pickle.dump({"results": results, "p1_values": P1_VALUES, "seeds": seeds_usadas}, f)
+print("\nResultados guardados en results/results_young_cruzado.pkl")

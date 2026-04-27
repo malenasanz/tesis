@@ -1,69 +1,65 @@
 from torchvision import transforms
 from torch.utils.data import DataLoader, Subset
-from src.datasets import CelebADataSet
+from .datasets import CelebADataSet
 import pandas as pd
+import numpy as np
 
 
-def separar_desarrollo_test(df, bias_attr, target_attr, test_size=0.1, seed=42):
+
+def split_balanceado(df, bias_attr, target_attr, seed=42):
     grupos = {(b, t): df[(df[bias_attr] == b) & (df[target_attr] == t)]
               for b in [0, 1] for t in [0, 1]}
     n = min(len(g) for g in grupos.values())
-    n_test = int(test_size * n)
 
-    desarrollo_dfs, test_dfs = [], []
+    train, val, test = [], [], []
     for (b, t), g in grupos.items():
-        g = g.sample(frac=1, random_state=seed)
-        test_dfs.append(g.iloc[:n_test])
-        desarrollo_dfs.append(g.iloc[n_test:n])
+        g = g.sample(n=n, random_state=seed)
+        train_idx = np.random.choice(g.index, size= int(0.8*n), replace=False)
+        train.append(train_idx)
+        val_idx = np.random.choice(list(set(g.index) - set(train_idx)), size= int(0.1*n), replace=False)
+        val.append(val_idx)
+        test_idx = list(set(g.index) - set(train_idx) - set(val_idx))
+        test.append(test_idx)
 
-    desarrollo_df = pd.concat(desarrollo_dfs)
-    test_df       = pd.concat(test_dfs)
+    print(f"Train: {int(0.8*n*4)} muestras")
+    for (b, t), idxs in zip([(b, t) for b in [0, 1] for t in [0, 1]], train):
+        print(f"  train ({b},{t}): {len(idxs)}")
+    print(f"Val:        {int(0.1*n*4)} muestras")
+    for (b, t), idxs in zip([(b, t) for b in [0, 1] for t in [0, 1]], val):
+        print(f"  val ({b},{t}): {len(idxs)}")
+    print(f"Test:       {int(0.1*n*4)} muestras")
+    for (b, t), idxs in zip([(b, t) for b in [0, 1] for t in [0, 1]], test):
+        print(f"  test ({b},{t}): {len(idxs )}")
 
-    print(f"Desarrollo: {len(desarrollo_df)} muestras ({n - n_test} por subgrupo)")
-    print(f"Test:       {len(test_df)} muestras ({n_test} por subgrupo)")
-    for (b, t), g in test_df.groupby([bias_attr, target_attr]):
-        print(f"  test ({b},{t}): {len(g)}")
-
-    return desarrollo_df, test_df
+    return train, val, test
 
 
-def get_subset_con_proporciones(df, bias_attr, target_attr, p1, p2, val_size=0.1, seed=42):
+def get_subset_con_proporciones(train_total, val_total, bias_attr, target_attr, p1, p2, val_size=0.1, seed=42):
     """
-    p1: proporcion de bias=1 dentro de target=1
-    p2: proporcion de bias=1 dentro de target=0
+    p1: proporcion de bias=1 dentro de target=0 (hombres no rubios)
+    p2: proporcion de bias=1 dentro de target=1 (hombres rubios)
     """
-    N = len(df) // 2
-    g = {(b, t): df[(df[bias_attr] == b) & (df[target_attr] == t)]
-         for b in [0, 1] for t in [0, 1]}
+    n_train = len(train_total[0])
+    n_val = len(val_total[0])
 
-    counts = {
-        (1, 1): int(p1 * N / 2),
-        (0, 1): int((1 - p1) * N / 2),
-        (1, 0): int(p2 * N / 2),
-        (0, 0): int((1 - p2) * N / 2),
-    }
+    counts_train = [(1-p1)*n_train, (1-p2)*n_train, p1*n_train, p2*n_train]
+    counts_val   = [(1-p1)*n_val,   (1-p2)*n_val,   p1*n_val,   p2*n_val]
 
-    for key, n in counts.items():
-        if n > len(g[key]):
-            raise ValueError(f"Grupo {key}: se piden {n} pero solo hay {len(g[key])} disponibles.")
+    train, val = [], []
 
-    train_dfs, val_dfs = [], []
-    for key, n in counts.items():
-        sampled = g[key].sample(n=n, random_state=seed)
-        n_val = int(val_size * n)
-        val_dfs.append(sampled.iloc[:n_val])
-        train_dfs.append(sampled.iloc[n_val:])
+    for i in range(len(train_total)):
+        train_idx = np.random.choice(train_total[i], size=int(counts_train[i]))
+        train.append(train_idx)
+        val_idx = np.random.choice(val_total[i], size=int(counts_val[i]))
+        val.append(val_idx)
 
-    train_df = pd.concat(train_dfs)
-    val_df   = pd.concat(val_dfs)
-
-    print(f"Train: {len(train_df)} | Val: {len(val_df)} | p1={p1:.2f} p2={p2:.2f}")
-    for target_val, group in train_df.groupby(target_attr):
-        total = len(group)
-        for bias_val, subgroup in group.groupby(bias_attr):
-            print(f"  train target={target_val}, bias={bias_val}: {len(subgroup)/total*100:.1f}% ({len(subgroup)})")
-
-    return train_df, val_df
+    print(f"Train: {sum(len(x) for x in train)} muestras. Coincide con {n_train*2}")
+    print(f"Val: {sum(len(x) for x in val)} muestras. Coincide con {n_val*2}")
+    print(f"Porcentaje mujeres no rubias: {len(train[0])*100/n_train:.2f}%, {len(train[0])} muestras.")
+    print(f"Porcentaje mujeres rubias: {len(train[1])*100/n_train:.2f}%, {len(train[1])} muestras.")
+    print(f"Porcentaje hombres no rubios: {len(train[2])*100/n_train:.2f}%, {len(train[2])} muestras.")
+    print(f"Porcentaje hombres rubios: {len(train[3])*100/n_train:.2f}%, {len(train[3])} muestras.")
+    return train, val
 
 
 def get_dataloaders(config):
@@ -79,28 +75,34 @@ def get_dataloaders(config):
         target_attr=config["target_attr"]
     )
 
-    seed       = config.get("seed", 42)
-    bias_attr  = config["bias_attr"]
+    seed        = config.get("seed", 42)
+    bias_attr   = config["bias_attr"]
     target_attr = config["target_attr"]
     name_to_idx = {name: i for i, name in enumerate(dataset.images)}
 
-    desarrollo_df, test_df = separar_desarrollo_test(
-        dataset.df, bias_attr, target_attr,
-        test_size=config.get("test_size", 0.1),
-        seed=seed
-    )
+    train_bal, val_bal, test_bal = split_balanceado(dataset.df, bias_attr, target_attr, seed)
 
-    train_df, val_df = get_subset_con_proporciones(
-        desarrollo_df, bias_attr, target_attr,
+    train_idx, val_idx = get_subset_con_proporciones(
+        train_bal, val_bal, bias_attr, target_attr,
         p1=config.get("p1", 0.5),
         p2=config.get("p2", 0.5),
-        val_size=config.get("val_size", 0.1),
         seed=seed
     )
 
-    train_dataset = Subset(dataset, [name_to_idx[n] for n in train_df.index])
-    val_dataset   = Subset(dataset, [name_to_idx[n] for n in val_df.index])
-    test_dataset  = Subset(dataset, [name_to_idx[n] for n in test_df.index])
+    all_train = np.concatenate(train_idx)
+    all_val   = np.concatenate(val_idx)
+    all_test  = np.concatenate(test_bal)
+
+    overlap_train_test = len(set(all_train) & set(all_test))
+    overlap_train_val  = len(set(all_train) & set(all_val))
+    overlap_val_test   = len(set(all_val)   & set(all_test))
+    print(f"Overlap train-test: {overlap_train_test} | train-val: {overlap_train_val} | val-test: {overlap_val_test}")
+
+    test_df = dataset.df.loc[all_test]
+
+    train_dataset = Subset(dataset, [name_to_idx[n] for n in all_train])
+    val_dataset   = Subset(dataset, [name_to_idx[n] for n in all_val])
+    test_dataset  = Subset(dataset, [name_to_idx[n] for n in all_test])
 
     batch_size = config.get("batch_size", 64)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
