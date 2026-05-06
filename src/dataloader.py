@@ -55,10 +55,11 @@ def get_subset_con_proporciones(train_total, val_total, bias_attr, target_attr, 
 
     print(f"Train: {sum(len(x) for x in train)} muestras. Coincide con {n_train*2}")
     print(f"Val: {sum(len(x) for x in val)} muestras. Coincide con {n_val*2}")
-    print(f"Porcentaje mujeres no rubias: {len(train[0])*100/n_train:.2f}%, {len(train[0])} muestras.")
-    print(f"Porcentaje mujeres rubias: {len(train[1])*100/n_train:.2f}%, {len(train[1])} muestras.")
-    print(f"Porcentaje hombres no rubios: {len(train[2])*100/n_train:.2f}%, {len(train[2])} muestras.")
-    print(f"Porcentaje hombres rubios: {len(train[3])*100/n_train:.2f}%, {len(train[3])} muestras.")
+    keys = [(b, t) for b in [0, 1] for t in [0, 1]]
+    for i, (b, t) in enumerate(keys):
+        b_label = bias_attr if b == 1 else f"no {bias_attr}"
+        t_label = target_attr if t == 1 else f"no {target_attr}"
+        print(f"  {b_label}, {t_label}: {len(train[i])*100/n_train:.2f}% ({len(train[i])} muestras)")
     return train, val
 
 
@@ -108,5 +109,42 @@ def get_dataloaders(config):
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader   = DataLoader(val_dataset,   batch_size=batch_size)
     test_loader  = DataLoader(test_dataset,  batch_size=batch_size)
+
+    return train_loader, val_loader, test_loader, dataset, test_df
+
+
+def get_dataloaders_simple(config):
+    transform = transforms.Compose([
+        transforms.Resize((128, 128)),
+        transforms.ToTensor(),
+    ])
+
+    dataset = CelebADataSet(
+        img_dir=config["img_dir"],
+        attr_path=config["attr_path"],
+        transform=transform,
+        target_attr=config["target_attr"]
+    )
+
+    seed = config.get("seed", 42)
+    rng  = np.random.default_rng(seed)
+
+    n       = len(dataset)
+    indices = rng.permutation(n)
+    n_train = int(0.8 * n)
+    n_val   = int(0.1 * n)
+
+    train_idx = indices[:n_train]
+    val_idx   = indices[n_train:n_train + n_val]
+    test_idx  = indices[n_train + n_val:]
+
+    print(f"Simple split — Train: {len(train_idx)} | Val: {len(val_idx)} | Test: {len(test_idx)}")
+
+    batch_size = config.get("batch_size", 64)
+    train_loader = DataLoader(Subset(dataset, train_idx), batch_size=batch_size, shuffle=True)
+    val_loader   = DataLoader(Subset(dataset, val_idx),   batch_size=batch_size)
+    test_loader  = DataLoader(Subset(dataset, test_idx),  batch_size=batch_size)
+
+    test_df = dataset.df.iloc[test_idx]
 
     return train_loader, val_loader, test_loader, dataset, test_df

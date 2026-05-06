@@ -47,7 +47,8 @@ for p1 in P1_VALUES:
     for i in range(N_CORRIDAS):
         seed = np.random.randint(0, 10000)
         seeds_usadas[p1].append(seed)
-        config = {**BASE_CONFIG, "p1": p1, "p2": p2, "seed": seed}
+        config = {**BASE_CONFIG, "p1": p1, "p2": p2, "seed": seed,
+                  "model_save_path": f"models/{BASE_CONFIG['bias_attr']}_p1{p1}_p2{p2}_corrida{i+1}_seed{seed}.pth"}
         print(f"\n  Corrida {i+1}/{N_CORRIDAS} | seed={seed}")
 
         train_loader, val_loader, test_loader, dataset, test_df = get_dataloaders(config)
@@ -63,6 +64,6 @@ for p1 in P1_VALUES:
         print(f"    {label}: mean={np.mean(accs):.4f} | std={np.std(accs):.4f}")
 
 os.makedirs("results", exist_ok=True)
-with open("results/results_young_cruzado.pkl", "wb") as f:
+with open(f"results/results_{BASE_CONFIG['bias_attr']}_cruzado.pkl", "wb") as f:
     pickle.dump({"results": results, "p1_values": P1_VALUES, "seeds": seeds_usadas}, f)
-print("\nResultados guardados en results/results_young_cruzado.pkl")
+print(f"\nResultados guardados en results/results_{BASE_CONFIG['bias_attr']}_cruzado.pkl")

@@ -1,3 +1,4 @@
+import torch
 from sklearn.metrics import accuracy_score
 from .eval import evaluate
 
@@ -31,5 +32,9 @@ def train(config, train_loader, val_loader, device):
         train_loss, train_acc = train_epoch(model, train_loader, optimizer, criterion, device)
         val_loss, val_acc = evaluate(model, val_loader, criterion, device)
         print(f"  Epoch {epoch+1}/{config['num_epochs']} | Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} | Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
+
+    if config.get("model_save_path"):
+        torch.save(model.state_dict(), config["model_save_path"])
+        print(f"  Modelo guardado en {config['model_save_path']}")
 
     return model
