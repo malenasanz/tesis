@@ -31,13 +31,14 @@ print("\n--- Tamaño de subgrupos (bias_attr x Blond_Hair) ---")
 for bias_attr, b0, b1 in [("Male", "Mujer", "Hombre"), ("Young", "Mayor", "Joven")]:
     print(f"\n  bias_attr = {bias_attr}:")
     min_n = None
+    total = len(df)
     for bv, blabel in [(0, b0), (1, b1)]:
         for tv, tlabel in [(0, "no rubia/o"), (1, "rubia/o")]:
             n = len(df[(df[bias_attr] == bv) & (df["Blond_Hair"] == tv)])
-            print(f"    {blabel} {tlabel}: {n}")
+            print(f"    {blabel} {tlabel}: {n} ({n/total*100:.1f}%)")
             if min_n is None or n < min_n:
                 min_n = n
-    print(f"  → Subgrupo mínimo: {min_n}")
+    print(f"  → Subgrupo mínimo: {min_n} ({min_n/total*100:.1f}%)")
 
 x = np.arange(len(ATTRS))
 width = 0.35

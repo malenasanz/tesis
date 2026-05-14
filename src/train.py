@@ -33,6 +33,10 @@ def train(config, train_loader, val_loader, device):
         val_loss, val_acc = evaluate(model, val_loader, criterion, device)
         print(f"  Epoch {epoch+1}/{config['num_epochs']} | Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} | Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
 
+        if config.get("save_each_epoch") and config.get("model_save_path"):
+            epoch_path = config["model_save_path"].replace(".pth", f"_epoch{epoch+1}.pth")
+            torch.save(model.state_dict(), epoch_path)
+
     if config.get("model_save_path"):
         torch.save(model.state_dict(), config["model_save_path"])
         print(f"  Modelo guardado en {config['model_save_path']}")
