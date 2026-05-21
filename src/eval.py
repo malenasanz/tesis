@@ -10,16 +10,15 @@ def evaluate(model, dataloader, criterion, device):
     all_labels = []
     total_loss = 0
 
+    multiclass = isinstance(criterion, torch.nn.CrossEntropyLoss)
     with torch.no_grad():
         for images, labels in dataloader:
             images = images.to(device)
-            labels_device = labels.float().unsqueeze(1).to(device)
-
+            labels_device = labels.long().to(device) if multiclass else labels.float().unsqueeze(1).to(device)
             outputs = model(images)
             loss = criterion(outputs, labels_device)
             total_loss += loss.item()
-
-            preds = (outputs > 0.5).cpu().numpy()
+            preds = outputs.argmax(dim=1).cpu().numpy() if multiclass else (outputs > 0).cpu().numpy()
             all_preds.extend(preds)
             all_labels.extend(labels.numpy())
 
@@ -36,7 +35,7 @@ def evaluate_subgroups(model, dataset, test_df, bias_attr, target_attr, device, 
             group_df = test_df[(test_df[bias_attr] == v1) & (test_df[target_attr] == v2)]
             indices = [name_to_idx[n] for n in group_df.index]
             loader = DataLoader(Subset(dataset, indices), batch_size=batch_size)
-            _, acc = evaluate(model, loader, nn.BCELoss(), device)
+            _, acc = evaluate(model, loader, nn.BCEWithLogitsLoss(), device)
             results[(v1, v2)] = {"acc": acc, "n": len(indices)}
 
     return results

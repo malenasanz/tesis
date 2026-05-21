@@ -20,7 +20,7 @@ BASE_CONFIG = {
     "learning_rate": 0.001,
     "model_class": SimpleCNN,
     "optimizer_class": torch.optim.Adam,
-    "criterion": nn.BCELoss(),
+    "criterion": nn.BCEWithLogitsLoss(),
     "save_each_epoch": True
 }
 
